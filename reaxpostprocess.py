@@ -26,6 +26,14 @@ import copy
 #with a datafile created with a classical FF that identifies the bonds 
 #(sometimes reaxFF does not identify molecules as intended)
 
+
+#TODO merge mgrouper_bdatafile_nx and mgrouper_bdump_nx into a single function
+
+
+#Easy example to filter nodes by attribute: nodesP= [x for x,y in tal.G0.nodes(data='sp') if y=='P']
+#Fast way to filter nodes that have an given attribute defined:  nx.get_node_attributes(G, 'attribute').keys()
+
+
 def get_species(datafile):
     
     """
@@ -92,6 +100,8 @@ def mgrouper_bdatafile_nx(bonddatafile,mol_limit=200):
     bonds: networkx.classes.reportviews.EdgeView
         similar to a list of tuples with all the bonds (inc. surface);
         it's faster for iterating than an actual list
+    full_G: networx.Graph
+        The full starting network (only with atomic indexes)
 
     """
     
@@ -129,6 +139,8 @@ def mgrouper_bdatafile_nx(bonddatafile,mol_limit=200):
     G.add_edges_from(btuple_list) #graph with all atoms and bonds
     bonds=copy.deepcopy(G.edges) #copy of all the bonds since they're removed from G in place later
     
+    full_G=copy.deepcopy(G)
+    
     list_connected=list(nx.connected_components(G))
     
     list_surfs=[]
@@ -146,6 +158,7 @@ def mgrouper_bdatafile_nx(bonddatafile,mol_limit=200):
     
     list_reactants=list(nx.connected_components(G))
     return list_reactants, list_surfs, bonds
+
 def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
     """
 
@@ -168,7 +181,8 @@ def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
     bonds: networkx.classes.reportviews.EdgeView
         similar to a list of tuples with all the bonds (inc. surface);
         it's faster for iterating than an actual list
-    
+    full_G: networx.Graph
+        The full starting network (only with atomic indexes)
     Get network data from the first timestep of the bonds dump file. Useful not
     to need a classical FF interpretation of the initial state.
     
@@ -211,6 +225,8 @@ def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
     G.add_edges_from(bonds)
     bonds=copy.deepcopy(G.edges) #copy of all the bonds since they're removed from G in place later
     
+    full_G=copy.deepcopy(G)
+    
     list_connected=list(nx.connected_components(G))
     
     list_surfs=[]
@@ -227,7 +243,7 @@ def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
             G.remove_nodes_from(list(surf))
     
     list_reactants=list(nx.connected_components(G))
-    return list_reactants, list_surfs, bonds
+    return list_reactants, list_surfs, bonds, full_G
     
 
 
@@ -259,18 +275,32 @@ class Networkgen:
         -
 
         """
-        self.G_start=nx.Graph() #to store graph of initial/reference molecules
+        
+        
+        #Get species
         self.species=get_species(datafile)
+        
+        #Get starting graph and separate reactant molecules and surfaces
         with open(starting_bfile) as f:
             first_line = f.readline()
     
         if 'Timestep' in first_line: #bdump
-            list_reactants, list_surfs, bonds=mgrouper_bdump_nx(starting_bfile,mol_limit=mol_limit,border_cutoff=border_cutoff) 
+            self.list_reactants, self.list_surfs, self.bonds, self.G0=mgrouper_bdump_nx(starting_bfile,mol_limit=mol_limit,border_cutoff=border_cutoff) 
         else:
-            list_reactants, list_surfs, bonds=mgrouper_bdatafile_nx(starting_bfile,mol_limit=mol_limit) 
+            self.list_reactants, self.list_surfs, self.bonds, self.G0=mgrouper_bdatafile_nx(starting_bfile,mol_limit=mol_limit) 
+         
             
+            
+        #Add species-related attributes to nodes and edges
+        for node in self.G0.nodes:
+            self.G0.add_nodes_from([node], sp=self.species[node])
         
-            
+        for bond in self.G0.edges:
+            sp1=self.species[bond[0]]
+            sp2=self.species[bond[1]]
+            spinbond=[sp1,sp2]
+            spinbond.sort()
+            self.G0.add_edges_from([bond],sp= '-'.join(spinbond))
             
             
             
