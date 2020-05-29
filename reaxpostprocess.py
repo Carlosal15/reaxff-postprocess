@@ -437,10 +437,11 @@ class Networkgen:
          
             
             
-        #Add species-related attributes to nodes and edges
+        #Add element-related attributes to nodes and edges
         for node in self.G0.nodes:
             self.G0.add_nodes_from([node], element=self.species[node]) #changed label of attribute 'sp' to 'element'
         
+        #Add sorted element attributes to bonds (eg O-P)
         for bond in self.G0.edges:
             sp1=self.species[bond[0]]
             sp2=self.species[bond[1]]
@@ -494,7 +495,7 @@ class Networkgen:
                 newmol_type=[i]
                 
                 for j in range(i+1,len(molgraphs)):
-                    GM = isomorphism.GraphMatcher(molgraphs[i],molgraphs[j],node_match=self.sp_match)
+                    GM = isomorphism.GraphMatcher(molgraphs[i],molgraphs[j],node_match=self.elem_match)
                     if GM.is_isomorphic():
                         newmol_type.append(j)
                 checked_mols.extend(newmol_type)
@@ -510,7 +511,7 @@ class Networkgen:
         
     
        
-    def sp_match(self,dict1,dict2):
+    def elem_match(self,dict1,dict2):
         #match species for isomorphism tests
         return dict1['element']==dict2['element']     
             
