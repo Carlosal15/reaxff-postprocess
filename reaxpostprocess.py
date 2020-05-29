@@ -17,6 +17,13 @@ import matplotlib.pyplot as plt
 import time
 import networkx as nx
 import copy
+from pysmiles import write_smiles, fill_valence #to convert graphs to smiles
+from rdkit import Chem #to convert smiles to canonical as examplified below:
+from collections import defaultdict
+from pysmiles.write_smiles import  _get_ring_marker, _write_edge_symbol
+from pysmiles.smiles_helper import remove_explicit_hydrogens, format_atom
+from networkx import isomorphism
+from indigo import *
 
 
 #Generates list of networkx graphs for each tstep and adds nodes properties:
@@ -33,6 +40,145 @@ import copy
 #Easy example to filter nodes by attribute: nodesP= [x for x,y in tal.G0.nodes(data='sp') if y=='P']
 #Fast way to filter nodes that have an given attribute defined:  nx.get_node_attributes(G, 'attribute').keys()
 
+#subgraphs =list(tal.G0.subgraph(c).copy() for c in nx.connected_components(tal.G0))
+
+
+
+
+def write_smiles(molecule, default_element='*', start=None):
+    """
+    Creates a SMILES string describing `molecule` according to the OpenSMILES
+    standard.
+    Parameters
+    ----------
+    molecule : nx.Graph
+        The molecule for which a SMILES string should be generated.
+    default_element : str
+        The element to write if the attribute is missing for a node.
+    start : Hashable
+        The atom at which the depth first traversal of the molecule should
+        start. A sensible one is chosen: preferably a terminal heteroatom.
+    Returns
+    -------
+    str
+        The SMILES string describing `molecule`.
+    """
+    molecule = molecule.copy()
+    #remove_explicit_hydrogens(molecule)
+
+    if start is None:
+        # Start at a terminal atom, and if possible, a heteroatom.
+        def keyfunc(idx):
+            """Key function for finding the node at which to start."""
+            return (molecule.degree(idx),
+                    # True > False
+                    molecule.nodes[idx].get('element', default_element) == 'C',
+                    idx)
+        start = min(molecule.nodes, key=keyfunc)
+
+
+    order_to_symbol = {0: '.', 1: '-', 1.5: ':', 2: '=', 3: '#', 4: '$'}
+
+    dfs_successors = nx.dfs_successors(molecule, source=start)
+
+    predecessors = defaultdict(list)
+    for node_key, successors in dfs_successors.items():
+        for successor in successors:
+            predecessors[successor].append(node_key)
+    predecessors = dict(predecessors)
+    # We need to figure out which edges we won't cross when doing the dfs.
+    # These are the edges we'll need to add to the smiles using ring markers.
+    edges = set()
+    for n_idx, n_jdxs in dfs_successors.items():
+        for n_jdx in n_jdxs:
+            edges.add(frozenset((n_idx, n_jdx)))
+    total_edges = set(map(frozenset, molecule.edges))
+    ring_edges = total_edges - edges
+
+    atom_to_ring_idx = defaultdict(list)
+    ring_idx_to_bond = {}
+    ring_idx_to_marker = {}
+    for ring_idx, (n_idx, n_jdx) in enumerate(ring_edges, 1):
+        atom_to_ring_idx[n_idx].append(ring_idx)
+        atom_to_ring_idx[n_jdx].append(ring_idx)
+        ring_idx_to_bond[ring_idx] = (n_idx, n_jdx)
+
+    branch_depth = 0
+    branches = set()
+    to_visit = [start]
+    smiles = ''
+
+    while to_visit:
+        current = to_visit.pop()
+        if current in branches:
+            branch_depth += 1
+            smiles += '('
+            branches.remove(current)
+
+        if current in predecessors:
+            # It's not the first atom we're visiting, so we want to see if the
+            # edge we last crossed to get here is interesting.
+            previous = predecessors[current]
+            assert len(previous) == 1
+            previous = previous[0]
+            if _write_edge_symbol(molecule, previous, current):
+                order = molecule.edges[previous, current].get('order', 1)
+                smiles += order_to_symbol[order]
+        smiles += format_atom(molecule, current, default_element)
+        if current in atom_to_ring_idx:
+            # We're going to need to write a ring number
+            ring_idxs = atom_to_ring_idx[current]
+            for ring_idx in ring_idxs:
+                ring_bond = ring_idx_to_bond[ring_idx]
+                if ring_idx not in ring_idx_to_marker:
+                    marker = _get_ring_marker(ring_idx_to_marker.values())
+                    ring_idx_to_marker[ring_idx] = marker
+                    new_marker = True
+                else:
+                    marker = ring_idx_to_marker.pop(ring_idx)
+                    new_marker = False
+
+                if _write_edge_symbol(molecule, *ring_bond) and new_marker:
+                    order = molecule.edges[ring_bond].get('order', 1)
+                    smiles += order_to_symbol[order]
+                smiles += str(marker) if marker < 10 else '%{}'.format(marker)
+
+        if current in dfs_successors:
+            # Proceed to the next node in this branch
+            next_nodes = dfs_successors[current]
+            # ... and if needed, remember to return here later
+            branches.update(next_nodes[1:])
+            to_visit.extend(next_nodes)
+        elif branch_depth:
+            # We're finished with this branch.
+            smiles += ')'
+            branch_depth -= 1
+
+    smiles += ')' * branch_depth
+    return smiles
+
+
+
+
+
+
+
+def graph_to_canonical_smiles(G,allHsExplicit=True):
+    #yields a canonical string from a graph representing a molecule, with
+    #node attributes 'element'
+    sm=write_smiles(G)
+    indigo = Indigo()
+    
+    mol=indigo.loadMolecule(sm)
+    mol.aromatize()
+    return mol.canonicalSmiles()
+    
+    
+    return Chem.MolToSmiles(m,isomericSmiles=False,allHsExplicit=allHsExplicit)
+
+def sp_match(dict1,dict2):
+    #match species for isomorphism tests
+    return dict1['sp']==dict2['sp']
 
 def get_species(datafile):
     
@@ -293,7 +439,7 @@ class Networkgen:
             
         #Add species-related attributes to nodes and edges
         for node in self.G0.nodes:
-            self.G0.add_nodes_from([node], sp=self.species[node])
+            self.G0.add_nodes_from([node], element=self.species[node]) #changed label of attribute 'sp' to 'element'
         
         for bond in self.G0.edges:
             sp1=self.species[bond[0]]
@@ -301,15 +447,71 @@ class Networkgen:
             spinbond=[sp1,sp2]
             spinbond.sort()
             self.G0.add_edges_from([bond],sp= '-'.join(spinbond))
+        
             
             
+    def get_equiv_labels(self, G0,mol_limit=200):
+        """
+
+        Parameters
+        ----------
+        G0 : nx.Graph
+            nx.Graph containing atomic indexes as nodes and bonds as edges, 
+            with species as 'sp' attribute for each node
+
+        Returns
+        -------
+        G0 : nx.Graph
+            adds equivalent label attributes to the nodes (e_g: P1, O2...)
+        list_equivs: list of lists
+            each nested list contains indexes of equivalent atoms, so that
+            it's easy to relabel/reassign attributes manually to the network
+        
+        Finds which atoms are in equivalent positions up to 3rd neighbors to
+        assign them the same labels and easily identify which bonds break in a
+        reaxFF simulation.
+          
+        If a connected component of a graph has more molecules than mol_limit, 
+        it is considered a surface and atoms in it are only assigned an attribute
+        
+        """
+        
+        #generate all connected graphs of molecules
+        molgraphs =list(G0.subgraph(c).copy() for c in nx.connected_components(G0) if len(c)<mol_limit)
+        
+        #graphs of surfaces    
+        surfgraphs =list(G0.subgraph(c).copy() for c in nx.connected_components(G0) if len(c)>=mol_limit)
             
-            
-            
-            
-            
-            
-            
-            
+        #Find which molecules are the same (check isomorphism and species)
+        
+        checked_mols=[]
+        equiv_mols=[]
+        
+        sm_list=[]
+        
+        for i in range(len(molgraphs)):
+            if i not in checked_mols:
+                newmol_type=[i]
+                
+                for j in range(i+1,len(molgraphs)):
+                    GM = isomorphism.GraphMatcher(molgraphs[i],molgraphs[j],node_match=self.sp_match)
+                    if GM.is_isomorphic():
+                        newmol_type.append(j)
+                checked_mols.extend(newmol_type)
+                equiv_mols.append(newmol_type)    
+                sm_list.append(graph_to_canonical_smiles(molgraphs[i],allHsExplicit=True))
+        #
+        
+        print('There are the following compounds and quantities:')
+        for i,m in enumerate(equiv_mols):
+            print(str(len(m))+' : '+sm_list[i])
+        
+        return equiv_mols,sm_list
+        
+    
+       
+    def sp_match(self,dict1,dict2):
+        #match species for isomorphism tests
+        return dict1['element']==dict2['element']     
             
             
