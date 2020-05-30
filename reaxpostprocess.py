@@ -171,14 +171,14 @@ def graph_to_canonical_smiles(G,allHsExplicit=True):
     
     mol=indigo.loadMolecule(sm)
     mol.aromatize()
-    return mol.canonicalSmiles()
+    return mol.canonicalSmiles() #Does not include with H...
     
     
-    return Chem.MolToSmiles(m,isomericSmiles=False,allHsExplicit=allHsExplicit)
+    #return Chem.MolToSmiles(m,isomericSmiles=False,allHsExplicit=allHsExplicit)
 
-def sp_match(dict1,dict2):
+def elem_match(dict1,dict2):
     #match species for isomorphism tests
-    return dict1['sp']==dict2['sp']
+    return dict1['element']==dict2['element']
 
 def get_species(datafile):
     
@@ -303,7 +303,7 @@ def mgrouper_bdatafile_nx(bonddatafile,mol_limit=200):
             G.remove_nodes_from(list(surf))
     
     list_reactants=list(nx.connected_components(G))
-    return list_reactants, list_surfs, bonds
+    return list_reactants, list_surfs, bonds,full_G
 
 def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
     """
@@ -505,14 +505,91 @@ class Networkgen:
         
         print('There are the following compounds and quantities:')
         for i,m in enumerate(equiv_mols):
-            print(str(len(m))+' : '+sm_list[i])
+            print(str(len(m))+' : '+sm_list[i]) #Does not include H but it's an easy way to check different molecules
         
-        return equiv_mols,sm_list
+        start=time.time()
+        dict_neighborpaths={}
+        for mol_type in equiv_mols:
+            #Assign a string to each atom based on sorted paths to 2nd neighbours
+            #store paths in dict to then compare and assign eq labels to all atoms with same paths
+            for mol in mol_type:
+                mymol=molgraphs[mol]
+                
+                for node in list(mymol):
+                    paths=[]
+                    sp0=mymol.nodes[node]['element'] 
+                    for neigh in mymol.neighbors(node):
+                        sp1=mymol.nodes[neigh]['element'] 
+                        
+                        noneigh2=True #condition in case there are no 2nd neighbours
+                        for neigh2 in mymol.neighbors(neigh):
+                            
+                            if neigh2 != node:
+                                noneigh2=False
+                                sp2=mymol.nodes[neigh2]['element'] 
+                                paths.append(sp0+sp1+sp2)
+                            
+                        if noneigh2: #append only 1st neighbours if there aren't 2nd ones
+                            paths.append(sp0+sp1) 
+                            
+                    paths.sort()
+                    dict_neighborpaths[node]=paths
+        print(time.time()-start)
+        
+        
+        #Since I want the script to reproduce the same labels for the same atoms (paths),
+        #need to iterate through alphabetically sorted paths instead of the randomly sorted
+        #indexes. For that purpose we use the dict:
+        
+        dict_paths={} #'pathstring':[ind1,ind2]
+        
+        for key,value in  dict_neighborpaths.items():
+            pathstring='-'.join(value)
+            if pathstring not in dict_paths:
+                dict_paths[pathstring]=[key]
+            else:
+                dict_paths[pathstring].append(key)
+        
+        dict_pathssort={}
+        for key, value in sorted(dict_paths.items()):
+            dict_pathssort[key]=value
+        
+        #Now iterate over this dictionary and assign labels in that order
+        labs_used=[]
+        for path,indices in dict_pathssort.items():
+            elem=G0.nodes[indices[0]]['element']
+            ind=1
+            while elem+'_'+str(ind) in labs_used:
+                ind=ind+1
+            newlab=elem+'_'+str(ind)
+            labs_used.append(newlab)
+            for atom in indices:
+                G0.nodes[atom]['label']=newlab
+        
+        for ind, surf in enumerate(surfgraphs):
+            if len(surfgraphs)<=1:
+                for atom in surf:
+                    elem=G0.nodes[atom]['element']
+                    G0.nodes[atom]['label']=elem+'_surf'
+            else:
+                for atom in surf:
+                    elem=G0.nodes[atom]['element']
+                    G0.nodes[atom]['label']=elem+'_surf'+str(ind+1)
+                
+        
+        return G0
         
     
        
     def elem_match(self,dict1,dict2):
         #match species for isomorphism tests
         return dict1['element']==dict2['element']     
-            
+if __name__ == "__main__":
+    datafile='30_glycerol_4000Kdlc.data'
+    starting_bfile='30_glycerol_diamond-bond.data'
+    tal=Networkgen(datafile,starting_bfile)
+    G0=tal.get_equiv_labels(tal.G0)
+    molgraphs =list(G0.subgraph(c).copy() for c in nx.connected_components(G0) if len(c)<200) 
+    
+    nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))       
             
