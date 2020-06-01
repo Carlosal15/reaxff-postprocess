@@ -449,7 +449,7 @@ class Networkgen:
             spinbond.sort()
             self.G0.add_edges_from([bond],sp= '-'.join(spinbond))
         
-            
+        self.G0=self.get_equiv_labels(self.G0,mol_limit)    
             
     def get_equiv_labels(self, G0,mol_limit=200):
         """
@@ -588,8 +588,8 @@ if __name__ == "__main__":
     datafile='30_glycerol_4000Kdlc.data'
     starting_bfile='30_glycerol_diamond-bond.data'
     tal=Networkgen(datafile,starting_bfile)
-    G0=tal.get_equiv_labels(tal.G0)
-    molgraphs =list(G0.subgraph(c).copy() for c in nx.connected_components(G0) if len(c)<200) 
+    #G0=tal.get_equiv_labels(tal.G0)
+    molgraphs =list(tal.G0.subgraph(c).copy() for c in nx.connected_components(tal.G0) if len(c)<200) 
     
     nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))       
             
