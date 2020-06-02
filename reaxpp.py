@@ -13,6 +13,7 @@ import os
 import numpy as np
 import nw_initialiser
 import networkx as nx 
+import time
 def get_networks(bonds_filenames,G0,border_cutoff=0.3,mol_limit=200):
     """
     Parameters
@@ -143,25 +144,40 @@ def write_bonds(G0,networks,tsteps,attribute,fout='bonds_pp.txt'):
             atr0=network.nodes[edge[0]][attribute]
             atr1=network.nodes[edge[1]][attribute]
             key=[atr0,atr1]
+            key.sort()
             key='-'.join(key)
             dict_bonds[key][i]=dict_bonds[key][i]+1
     
         for key in dict_bonds:
-            bline=bline+key+"\t"
+            bline=bline+str(int(dict_bonds[key][i]))+"\t"
         bline=bline+"\n"
         bfile.write(bline)
     
             
             
 if __name__ == "__main__":
+    start=time.time()
+    attribute='label'
     datafile='40xTSBP-2xFe3O4-scv.data'
     starting_bfile='40xTNBP-2xFe3O4-scv-BONDS.data'
     tal=nw_initialiser.Networkgen(datafile,starting_bfile)
     G0=tal.G0
+    tinit=time.time()
+    print('Initialised in:')
+    print(tinit-start)
+    #nx.get_node_attributes(G0,attribute)
     molgraphs =list(tal.G0.subgraph(c).copy() for c in nx.connected_components(tal.G0) if len(c)<200) 
-    
+    tdraw=time.time()
+    print('Drawn in:')
+    print(tdraw-tinit)
     nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
-    bonds_filenames=['bonds_equil_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt']#,'bonds_heat_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt','bonds_comp_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt']  
+    bonds_filenames=['bonds_equil_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt','bonds_heat_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt','bonds_comp_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt']  
     networks,tsteps=get_networks(bonds_filenames,tal.G0)      
+    tprocess=time.time()
+    print('Generated networks in')
+    print(tprocess-tdraw)
+    write_bonds(G0,networks,tsteps,attribute,fout='blabels_pp.txt')
+    twrite=time.time()
+    print('Wrote bonds in:')
+    print(twrite-tprocess)
     
-    write_bonds(G0,networks,tsteps,'element')
