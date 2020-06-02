@@ -127,9 +127,8 @@ def write_bonds(G0,networks,tsteps,attribute,fout='bonds_pp.txt'):
     for i,val1 in enumerate(values):
         for j,val2 in enumerate(values[i:]):
             key=[val1,val2]
-            key.sort()
-            key='-'.join(key)
-            print(key)
+            #key.sort()
+            key='-'.join(sorted(key))
             dict_bonds[key]=np.zeros(len(tsteps))
             header=header+key+"\t"
     header=header+"\n"
@@ -144,8 +143,8 @@ def write_bonds(G0,networks,tsteps,attribute,fout='bonds_pp.txt'):
             atr0=network.nodes[edge[0]][attribute]
             atr1=network.nodes[edge[1]][attribute]
             key=[atr0,atr1]
-            key.sort()
-            key='-'.join(key)
+            #key.sort()
+            key='-'.join(sorted(key))
             dict_bonds[key][i]=dict_bonds[key][i]+1
     
         for key in dict_bonds:
