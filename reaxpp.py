@@ -33,7 +33,7 @@ def get_networks(bonds_filenames,G0,border_cutoff=0.3,mol_limit=200):
 
     Returns
     -------
-    G_evo: list of nx.Graph()
+    networks: list of nx.Graph()
         list of graphs at each timestep in the bond dumps with the same node attributes
         as G0 (but no surf-surf bonding)
     tsteps: list of int
@@ -46,8 +46,8 @@ def get_networks(bonds_filenames,G0,border_cutoff=0.3,mol_limit=200):
     NumAtoms=len(G0)
     
     
-    list_networks=[]
-    list_tsteps=[]
+    networks=[]
+    tsteps=[]
     for bonds_filename in bonds_filenames:
         print(bonds_filename)
         
@@ -57,7 +57,7 @@ def get_networks(bonds_filenames,G0,border_cutoff=0.3,mol_limit=200):
         lnum=0
         while lnum<len(DataLines)-1:
             tstep=int(DataLines[lnum].split()[-1])
-            list_tsteps.append(tstep)
+            tsteps.append(tstep)
             lnum=lnum+7
             
             G_ts = nx.Graph () #new graph with original attributes for this timestep
@@ -87,9 +87,29 @@ def get_networks(bonds_filenames,G0,border_cutoff=0.3,mol_limit=200):
                                     bonds.append((AtomNum,linedata[int(3+bond)]))
                 
             G_ts.add_edges_from(bonds)
-            list_networks.append(G_ts)
+            networks.append(G_ts)
             lnum=lnum+NumAtoms+1   
-    return list_networks,list_tsteps
+    return networks,tsteps
+
+def write_bonds(list_networks,list_tsteps,attribute):
+    """
+    list_networks
+
+    Parameters
+    ----------
+    list_networks : TYPE
+        DESCRIPTION.
+    list_tsteps : TYPE
+        DESCRIPTION.
+    attribute : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+
                 
 if __name__ == "__main__":
     datafile='40xTSBP-2xFe3O4-scv.data'
