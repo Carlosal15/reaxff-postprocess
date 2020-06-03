@@ -438,7 +438,15 @@ class Networkgen:
         else:
             self.list_reactants, self.list_surfs, self.bonds, self.G0=mgrouper_bdatafile_nx(starting_bfile,mol_limit=mol_limit) 
          
-            
+        self.surfatoms=set()    
+        for surf in self.list_surfs:
+            for at in surf:
+                self.surfatoms.add(at)
+                
+        self.reactants=set()    
+        for m in self.list_reactants:
+            for at in m:
+                self.reactants.add(at)
             
         #Add element-related attributes to nodes and edges
         for node in self.G0.nodes:
@@ -649,11 +657,12 @@ class Networkgen:
                     linedata = tuple(map(float,line[:2*numbonds+4])) # saves atom IDs types num of bonds and bond orders                      
         
                     AtomNum = linedata[0]
-                    
+                    #TODO parse only reactants, will be quicker
                     for bond in range(numbonds):
                         #first 3 digits are index, type, nb, then index of bonded atoms, then molecule of the atom, then bond orders
-                        if linedata[int(3+numbonds+1+bond)]>border_cutoff:
-                                        bonds.append((AtomNum,linedata[int(3+bond)]))
+                        if any(at in self.reactants for at in [AtomNum,linedata[int(3+bond)]]):
+                            if linedata[int(3+numbonds+1+bond)]>border_cutoff:
+                                            bonds.append((AtomNum,linedata[int(3+bond)]))
                     
                 G_ts.add_edges_from(bonds)
                 networks.append(G_ts)
