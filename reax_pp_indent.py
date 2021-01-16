@@ -161,8 +161,6 @@ def write_smiles(molecule, default_element='*', start=None):
 
 
 
-
-
 def graph_to_canonical_smiles(G,allHsExplicit=True):
     #yields a canonical string from a graph representing a molecule, with
     #node attributes 'element'
@@ -395,7 +393,7 @@ def mgrouper_bdump_nx(bdump,border_cutoff=0.3,mol_limit=200):
 
 class Networkgen:
     
-    def __init__(self, datafile,starting_bfile,border_cutoff=0.3,mol_limit=200):
+    def __init__(self, datafile,starting_bfile,border_cutoff=0.3,mol_limit=100):
         """
 
         Parameters
@@ -513,31 +511,11 @@ class Networkgen:
                 equiv_mols.append(newmol_type)    
                 sm_list.append(graph_to_canonical_smiles(molgraphs[i],allHsExplicit=True))
         #
-                
-        ###get the surfaces formula
-        surf_formulas=[]
-        for sg in surfgraphs:
-            elems_s=nx.get_node_attributes(sg,'element')
-            els_dict={}
-            string_surfform=""
-            for els in elems_s:
-                try:
-                    els_dict[elems_s[els]]=els_dict[elems_s[els]]+1
-                except:
-                    els_dict[elems_s[els]]=1
-            #create string
-            for surf_sp in els_dict:
-                string_surfform=string_surfform+str(surf_sp)+str(els_dict[surf_sp])
-            surf_formulas.append(string_surfform)
+        
         print('There are the following compounds and quantities:')
         for i,m in enumerate(equiv_mols):
             print(str(len(m))+' : '+sm_list[i]) #Does not include H but it's an easy way to check different molecules
         
-        print('There are the following surfaces:')
-        for surf_formula in surf_formulas:
-            print(surf_formula)
-            
-            
         start=time.time()
         dict_neighborpaths={}
         for mol_type in equiv_mols:
@@ -654,6 +632,7 @@ class Networkgen:
             lnum=0
             while lnum<len(DataLines)-1:
                 tstep=int(DataLines[lnum].split()[-1])
+                #print(str(lnum)+' '+DataLines[lnum])
                 tsteps.append(tstep)
                 lnum=lnum+7
                 
@@ -666,27 +645,39 @@ class Networkgen:
                 
                 #timestep_lines=DataLines[lnum:lnum+NumAtoms]
                 
-                for i in range(NumAtoms):
-                    line = DataLines[lnum+i].split()
+                #for i in range(NumAtoms):
+                while DataLines[lnum][0] !='#':
+                    line = DataLines[lnum].split()
                     
                     try:
                         numbonds = int(line[2])
                     except:
                         print(line)
-                        print(lnum+i)
-                    linedata = tuple(map(float,line[:2*numbonds+4])) # saves atom IDs types num of bonds and bond orders                      
+                        print(lnum)
+                    try:
+                        linedata = tuple(map(float,line[:2*numbonds+4])) # saves atom IDs types num of bonds and bond orders        
+                    except:
+                        print('Error in: '+bonds_filename)
+                        print('line: '+str(lnum))
+                        print(line)
         
                     AtomNum = linedata[0]
                     #TODO parse only reactants, will be quicker
                     for bond in range(numbonds):
                         #first 3 digits are index, type, nb, then index of bonded atoms, then molecule of the atom, then bond orders
-                        if any(at in self.reactants for at in [AtomNum,linedata[int(3+bond)]]):
+                        
+                        
+                        #comment out the following conditionto track surface bonds as well
+                        #if any(at in self.reactants for at in [AtomNum,linedata[int(3+bond)]]):
                             if linedata[int(3+numbonds+1+bond)]>border_cutoff:
                                             bonds.append((AtomNum,linedata[int(3+bond)]))
                     
+                    lnum=lnum+1
+                    
                 G_ts.add_edges_from(bonds)
                 networks.append(G_ts)
-                lnum=lnum+NumAtoms+1   
+                lnum=lnum+1
+                #lnum=lnum+NumAtoms+1   
         self.networks=networks
         self.tsteps=tsteps
         #return networks,tsteps
@@ -707,8 +698,7 @@ class Networkgen:
             node attributes to be used for bond counting. Eg, if 'element', it 
             will count the number of P-O bonds and so on; if 'label', P_1-O_2... 
             other attributes can be added to the nodes to be employed with this function
-        Returns
-        -------
+    
         Generates a file fout with a header and lines with bonds of each tipe per timestep, eg:
         Timestep	Fe-C1	Fe-C2	Fe-C3	Fe-C4	Fe-O1	Fe-O2	O1-P1 O2-P1	O1-C1	O1-C2	O1-C3	O1-C4	O2-C1	O2-C2	O2-C3	O2-C4
        	4000	0	0	0	0	0	0	0	0	0	0	0	0	0	0
@@ -802,14 +792,13 @@ class Networkgen:
         pass_masses=False
         pass_first_empty=False
         for index,line in enumerate(header_lines):
-            if pass_masses and not line.split() and pass_first_empty:
-                index=index
-                break
             if 'Masses' in line:
                 pass_masses=True
             elif pass_masses and not line.split():
                 pass_first_empty=True
-            
+            elif pass_masses and not line.split() and pass_first_empty:
+                index=index
+                break
         header_lines=header_lines[:index]  #the index was 26 by default in most cases, but the way here is more versatile
 
 
@@ -849,8 +838,6 @@ class Networkgen:
                         header_lines[line_ind]=str(nbonds)+' bonds \n'
                     if 'atoms' in line:
                         header_lines[line_ind]=str(dump_natoms)+' atoms \n'
-                    if 'bond types' in line:
-                        header_lines[line_ind]=str(1)+' bond types \n'
                 
                 my_new_lines=header_lines.copy()
                 
@@ -875,23 +862,15 @@ class Networkgen:
                 dout.writelines(my_new_lines)
                 dout.close()
 
-
-    ########################################################################
-    # FINISH BOND DATAFILES FUNCTION HERE
-    ########################################################################
-
+            
     def elem_match(self,dict1,dict2):
         #match species for isomorphism tests
         return dict1['element']==dict2['element']     
 if __name__ == "__main__":
-    """
-    #typical use:
-    
-    os.chdir('/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe')
     start=time.time()
     attribute='element'
-    datafile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data'
-    starting_bfile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data'
+    datafile='calcite-diamond.data'
+    starting_bfile='bonds_equil.txt'
     tal=Networkgen(datafile,starting_bfile)
     #G0=tal.G0
     tinit=time.time()
@@ -902,8 +881,8 @@ if __name__ == "__main__":
     tdraw=time.time()
     print('Drawn in:')
     print(tdraw-tinit)
-    nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
-    bonds_filenames=['bonds_equil.txt','bonds_heat.txt','bonds_comp.txt']  
+    #nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
+    bonds_filenames=['bonds_equil.txt','bonds_comp.txt']  
     #networks,tsteps=get_networks(bonds_filenames,tal.G0)    
     tal.get_networks(bonds_filenames)
     tprocess=time.time()
@@ -912,169 +891,16 @@ if __name__ == "__main__":
     tal.write_bonds(fout='btest_pp.txt')
     twrite=time.time()
     print('Wrote bonds in:')
-    print(twrite-tprocess)"""
+    print(twrite-tprocess)  
 
+    directory_ovito_out='[input directory here]'
+    path_name_data_out='[path to datafiles to be created; I suggest end it with an underscore, after which each tstep number will be appended]'
+    #create directory if it doesn't exist
+    try:
+        os.mkdir('/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/'+system)
+    except:
+        pass
 
-
-    """
-    #really messy way of doing it by putting everything in separate lists but it'll have to do for now...
-    #directories=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-2GPa-10ms-48xTSBP-2xFe',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-3GPa-10ms-48xTSBP-2xFe',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-4GPa-10ms-48xTSBP-2xFe',
-    directories=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe2O3',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-2GPa-10ms-48xTSBP-2xFe2O3']
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-3GPa-10ms-48xTSBP-2xFe2O3',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-4GPa-10ms-48xTSBP-2xFe2O3'] #missing 1&2Gpa Fe2O3 for TSBP and all TNBP as of this writing
-
-    borders=[0.3,0.4,0.5,0.2]
-
-    #datafiles=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data',
-    datafiles=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48.data',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48.data']
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48.data']
-
-
-    #starting_bfiles=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data',
-    starting_bfiles=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48-B.data',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48-B.data']
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48-B.data',
-    #'/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe2O3_x48-B.data']
-
-
-
-    for border in borders:
-        for ind, direct in enumerate(directories):
-            print('Dealing with...:')
-            print('Border: '+str(border))
-            print(direct)
-            os.chdir(direct)
+    datafile_for_header=datafile
+    tal.write_bonds_datafiles(dumps_filenames,path_name_data_out,datafile_for_header)
             
-            start=time.time()
-            attribute='element'
-            datafile=datafiles[ind]
-            starting_bfile=starting_bfiles[ind]
-            tal=Networkgen(datafile,starting_bfile,border_cutoff=border)
-            #G0=tal.G0
-            tinit=time.time()
-            print('Initialised in:')
-            print(tinit-start)
-            #nx.get_node_attributes(G0,attribute)
-            molgraphs =list(tal.G0.subgraph(c).copy() for c in nx.connected_components(tal.G0) if len(c)<200) 
-            tdraw=time.time()
-            print('Drawn in:')
-            print(tdraw-tinit)
-            nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
-            bonds_filenames=['bonds_equil.txt','bonds_heat.txt','bonds_comp.txt']  
-            #networks,tsteps=get_networks(bonds_filenames,tal.G0)    
-            tal.get_networks(bonds_filenames,border_cutoff=border)
-            tprocess=time.time()
-            print('Generated networks in')
-            print(tprocess-tdraw)
-
-            config=direct.split('/')[-1]
-            tal.write_bonds(fout='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/'+config+'_b'+str(border))
-            twrite=time.time()
-            print('Wrote bonds in:')
-            print(twrite-tprocess)"""
-    
-
-    borders=[0.3]#,0.4,0.5,0.2]
-
-    directories=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-2GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-3GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-4GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/300K-2GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/500K-2GPa-10ms-48xTSBP-2xFe',
-    '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/600K-2GPa-10ms-48xTSBP-2xFe']
-    
-    bonds_filenames=['bonds_equil.txt','bonds_heat.txt','bonds_comp.txt'] 
-    dumps_filenames=['dump_equil.lammpstrj','dump_heat.lammpstrj','dump_comp.lammpstrj']    
-
-    for border in borders:
-        for ind, direct in enumerate(directories):
-            system=direct.split('/')[-1]
-            
-            print('Dealing with...:')
-            print('Border: '+str(border))
-            print(direct)
-            os.chdir(direct)
-
-            attribute='element'
-            datafile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data'
-            starting_bfile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data'
-
-            start=time.time()
-            tal=Networkgen(datafile,starting_bfile)
-            #G0=tal.G0
-            tinit=time.time()
-            print('Initialised in:')
-            print(tinit-start)
-
-
-            tal.get_networks(bonds_filenames)
-            tprocess=time.time()
-            print('Generated networks in')
-            print(tprocess-tinit)
-
-
-            fout='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/'+system+'_b'+str(border)
-
-            tal.write_bonds(fout=fout)
-            twrite=time.time()
-            print('Wrote bonds in:')
-            print(twrite-tprocess)  
-            try:
-                os.mkdir('/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/'+system)
-            except:
-                pass
-            path_name_data_out='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/'+system+'/'+system+'_'
-            datafile_for_header='TSBP_Fe_x48.data'
-            tal.write_bonds_datafiles(dumps_filenames,path_name_data_out,datafile_for_header)
-    """
-    #G0=tal.G0
-    tinit=time.time()
-    print('Initialised in:')
-    print(tinit-start)
-    
-    os.chdir('/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe')
-    bonds_filenames=['bonds_equil.txt','bonds_heat.txt','bonds_comp.txt'] 
-    dumps_filenames=['dump_equil.lammpstrj','dump_heat.lammpstrj','dump_comp.lammpstrj']    
-    
-    attribute='element'
-    datafile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48.data'
-    starting_bfile='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/datafiles/TSBP_Fe_x48-BONDS.data'
-    
-    start=time.time()
-    tal=Networkgen(datafile,starting_bfile)
-    #G0=tal.G0
-    tinit=time.time()
-    print('Initialised in:')
-    print(tinit-start)
-
-    #nx.get_node_attributes(G0,attribute)
-    #molgraphs =list(tal.G0.subgraph(c).copy() for c in nx.connected_components(tal.G0) if len(c)<200) 
-    tdraw=time.time()
-    print('Drawn in:')
-    print(tdraw-tinit)
-    #nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
-    #networks,tsteps=get_networks(bonds_filenames,tal.G0)    
-    
-    
-
-    tal.write_bonds(fout='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/400K-1GPa-10ms-48xTSBP-2xFe_b0.3')
-    twrite=time.time()
-    print('Wrote bonds in:')
-    print(twrite-tprocess)   
-
-    path_name_data_out='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/400K-1GPa-10ms-48xTSBP-2xFe_'
-    datafile_for_header='TSBP_Fe_x48.data'
-    tal.write_bonds_datafiles(dumps_filenames,path_name_data_out,datafile_for_header)"""

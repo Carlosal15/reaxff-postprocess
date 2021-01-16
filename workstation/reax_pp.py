@@ -802,14 +802,13 @@ class Networkgen:
         pass_masses=False
         pass_first_empty=False
         for index,line in enumerate(header_lines):
-            if pass_masses and not line.split() and pass_first_empty:
-                index=index
-                break
             if 'Masses' in line:
                 pass_masses=True
             elif pass_masses and not line.split():
                 pass_first_empty=True
-            
+            elif pass_masses and not line.split() and pass_first_empty:
+                index=index
+                break
         header_lines=header_lines[:index]  #the index was 26 by default in most cases, but the way here is more versatile
 
 
@@ -849,8 +848,6 @@ class Networkgen:
                         header_lines[line_ind]=str(nbonds)+' bonds \n'
                     if 'atoms' in line:
                         header_lines[line_ind]=str(dump_natoms)+' atoms \n'
-                    if 'bond types' in line:
-                        header_lines[line_ind]=str(1)+' bond types \n'
                 
                 my_new_lines=header_lines.copy()
                 
@@ -986,7 +983,7 @@ if __name__ == "__main__":
             print(twrite-tprocess)"""
     
 
-    borders=[0.3]#,0.4,0.5,0.2]
+    borders=[0.3,0.4,0.5,0.2]
 
     directories=['/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-1GPa-10ms-48xTSBP-2xFe',
     '/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/400K-2GPa-10ms-48xTSBP-2xFe',
