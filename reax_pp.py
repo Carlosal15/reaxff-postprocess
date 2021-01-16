@@ -18,7 +18,7 @@ import time
 import networkx as nx
 import copy
 from pysmiles import write_smiles, fill_valence #to convert graphs to smiles
-from rdkit import Chem #to convert smiles to canonical as examplified below:
+#from rdkit import Chem #to convert smiles to canonical as examplified below:
 from collections import defaultdict
 from pysmiles.write_smiles import  _get_ring_marker, _write_edge_symbol
 from pysmiles.smiles_helper import remove_explicit_hydrogens, format_atom
@@ -513,11 +513,31 @@ class Networkgen:
                 equiv_mols.append(newmol_type)    
                 sm_list.append(graph_to_canonical_smiles(molgraphs[i],allHsExplicit=True))
         #
-        
+                
+        ###get the surfaces formula
+        surf_formulas=[]
+        for sg in surfgraphs:
+            elems_s=nx.get_node_attributes(sg,'element')
+            els_dict={}
+            string_surfform=""
+            for els in elems_s:
+                try:
+                    els_dict[elems_s[els]]=els_dict[elems_s[els]]+1
+                except:
+                    els_dict[elems_s[els]]=1
+            #create string
+            for surf_sp in els_dict:
+                string_surfform=string_surfform+str(surf_sp)+str(els_dict[surf_sp])
+            surf_formulas.append(string_surfform)
         print('There are the following compounds and quantities:')
         for i,m in enumerate(equiv_mols):
             print(str(len(m))+' : '+sm_list[i]) #Does not include H but it's an easy way to check different molecules
         
+        print('There are the following surfaces:')
+        for surf_formula in surf_formulas:
+            print(surf_formula)
+            
+            
         start=time.time()
         dict_neighborpaths={}
         for mol_type in equiv_mols:
@@ -748,10 +768,11 @@ class Networkgen:
         #match species for isomorphism tests
         return dict1['element']==dict2['element']     
 if __name__ == "__main__":
+    os.chdir('/Users/carlos/Work/TSM_CDT/PhD/ReaxFF/CompShear/400K-3GPa-10ms-48xTSBP-2xFe2O3/')
     start=time.time()
     attribute='element'
-    datafile='40xTSBP-2xFe3O4-scv.data'
-    starting_bfile='40xTNBP-2xFe3O4-scv-BONDS.data'
+    datafile='TSBP_Fe2O3_x48.data'
+    starting_bfile='/Users/carlos/Work/TSM_CDT/PhD/ReaxFF/CompShear/datafiles/TSBP_Fe2O3_x48-B.data'
     tal=Networkgen(datafile,starting_bfile)
     #G0=tal.G0
     tinit=time.time()
@@ -763,7 +784,7 @@ if __name__ == "__main__":
     print('Drawn in:')
     print(tdraw-tinit)
     nx.draw_networkx(molgraphs[0],with_labels=True,labels=dict(molgraphs[0].nodes(data='label')))        
-    bonds_filenames=['bonds_equil_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt','bonds_heat_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt','bonds_comp_500K-2GPa-10ms-40xTSBP-2xFe3O4.txt']  
+    bonds_filenames=['bonds_equil.txt','bonds_heat.txt','bonds_comp.txt']  
     #networks,tsteps=get_networks(bonds_filenames,tal.G0)    
     tal.get_networks(bonds_filenames)
     tprocess=time.time()
