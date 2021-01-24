@@ -24,6 +24,7 @@ from pysmiles.write_smiles import  _get_ring_marker, _write_edge_symbol
 from pysmiles.smiles_helper import remove_explicit_hydrogens, format_atom
 from networkx import isomorphism
 from indigo import *
+import pandas as pd
 
 
 #Generates list of networkx graphs for each tstep and adds nodes properties:
@@ -880,9 +881,154 @@ class Networkgen:
     # FINISH BOND DATAFILES FUNCTION HERE
     ########################################################################
 
+    ########################################################################
+    # SUBGRAPH GENERATOR AND WRITER OF 2ND NEIGHBOUR BONDS
+    ########################################################################
+    
+    
+    def get_subgraphs_per_attribute(self, attribute='element', values=["P","O"]):
+        """
+        
+    
+        Parameters
+        ----------
+        graph : list of networkx.Graph instances (corresponding to steps of a simulation,
+                with the same nodes (atoms) each)
+        
+        attribute: string
+        
+        values: list of strings
+    
+        Returns
+        -------
+        self.subgraphs_list: list of networkx.Subgraph instance
+        
+        Takes a list of graphs and returns a list of subgraphs where the nodes have the attribute(s) defined
+        corresponding to values. Used to limit to certain atomic species (e.g. "element", "P")
+        
+        """
+        
+        #obtain the list of nodes first and only once. It doesn't take too long, though.
+        new_nodes=[]
+        for value in values:
+            new_nodes.extend([x for x,y in self.networks[0].nodes(data=True) if y[attribute]==value])
+        
+        def subg(graph, nodes):
+            #sg= graph.__class__()
+            #g.add_nodes_from((n, graph[n]) for n in nodes)
+            return graph.subgraph(new_nodes)
+        
+        #subgraph_list=list(map(subg,graphs,*new_nodes))
+        self.subgraph_list=[subg(g, new_nodes) for g in self.networks]
+        
+    def write_bonds_2nd_order(self,attribute='element',bond="P-O-P",fout='P-O-P_bonds.txt'):
+        """
+    
+        Parameters
+        ----------
+         
+        Returns
+        -------
+        Generates a file fout with the number of 3 atom bonds of the specified attribute, 
+        say P-O-P with attribute "element".
+        
+        Intended to work on reduced subgraphs generated with self.get_subgraphs_per_attribute 
+        to discriminate expensive iterations on the full graphs.
+        E.G.
+        Timestep	P-O-P
+       	4000	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+    
+        """
+        
+        #Get all the different attributes
+        atom1=bond.split('-')[0]
+        atom2=bond.split('-')[1]
+        atom3=bond.split('-')[2]
+        
+        header="Timestep"+"\t"+bond+"\n"
+        
+        bfile=open(fout,'w')
+        bfile.write(header)
+        
+        #Get nodes corresponding to the first atom in the bond; only these are
+        #used for searching
+        nodes_atom1=[x for x,y in self.networks[0].nodes(data=True) if y[attribute]==atom1]
+        
+        for i,tstep in enumerate(self.tsteps):
+            network=self.subgraph_list[i]
+            bline=str(tstep)+"\t"
+            
+            bonds_tstep=0
+            for at1 in nodes_atom1:
+                
+                #generate iterable with conditions
+                gen1=(at2 for at2 in network.neighbors(at1) if network.nodes[at2][attribute]==atom2)
+                for at2 in gen1:
+                    
+                    gen2=(at3 for at3 in network.neighbors(at2) if network.nodes[at3][attribute]==atom3 and at3 !=at1)
+                    for at3 in gen2:
+                        bonds_tstep=bonds_tstep+1
+            
+            bline=bline+str(int(bonds_tstep))+"\n"
+        
+        bfile.write(bline)
+
     def elem_match(self,dict1,dict2):
         #match species for isomorphism tests
-        return dict1['element']==dict2['element']     
+        return dict1['element']==dict2['element']    
+
+            
+    ########################################################################
+    # CLUSTER GENERATOR (USED FOR POLYPHOSPHATE-LIKE CLUSTERS)
+    ########################################################################
+            
+    def get_clusters_per_attribute(self,attribute='element',value='P',fout='fout.txt',max_length=48):    
+        """
+    
+        Parameters
+        ----------
+        networks: list of nx.Graph objects
+        attribute : string
+            node attribute to discriminate the atoms in the cluster
+        values : list of strings
+            list of attribute values of atoms to search clusters of.
+        max_cluster: int
+            max possible number of atoms in a cluster
+        
+        Returns
+        -------
+        [This needs completion]
+        
+        Takes the list of self.subgraph_list (generated with self.get_subgraphs_per_attribute),
+        gets the number of connected components in each and the number of 
+        atoms of the given attribute in each connected component, and writes to file. 
+        Originally written to get clusters of P and O atoms, then count the number of P atoms in each.
+        Also generates self.cluster_df (dataframe)
+        """
+        
+        
+        cfile=open(fout,'w')
+    
+        #create dataframe
+        
+        self.cluster_df=pd.DataFrame(columns=list(range(1,max_length+1)),dtype=np.int8,
+                                index=self.tsteps,data=np.zeros([len(self.tsteps),max_length]))
+        
+        
+        for ind,network in enumerate(self.subgraph_list):
+            connected=nx.connected_components(network)
+            
+            for cluster in connected:
+                n_atoms=0
+                for at in cluster:
+                    if network.nodes[at][attribute]==value:
+                        n_atoms=n_atoms+1
+                if n_atoms>0:
+                    self.cluster_df.at[self.tsteps[ind],n_atoms]=self.cluster_df.at[self.tsteps[ind],n_atoms]+1
+        
+        self.cluster_df.index.name='Timestep'
+        self.cluster_df.to_csv(path_or_buf=fout,sep='\t')           
+
 if __name__ == "__main__":
     """
     #typical use:
@@ -1026,12 +1172,22 @@ if __name__ == "__main__":
             print(tprocess-tinit)
 
 
+            fout_PO='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/'+system+'_POP_'+str(border)
+            tal.get_subgraphs_per_attribute(attribute='element', values=["P","O"])
+
+            print('Generated POP subgraphs in')
+            tsubgraphs=time.time()
+            print(tsubgraphs-tprocess)
+            tal.write_bonds_2nd_order(attribute='element',bond="P-O-P",fout=fout_PO)
+            print('Wrote POP bonds in')
+            tsubgraphs_w=time.time()
+            print(tsubgraphs_w-tsubgraphs)
             fout='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/'+system+'_b'+str(border)
 
             tal.write_bonds(fout=fout)
             twrite=time.time()
-            print('Wrote bonds in:')
-            print(twrite-tprocess)  
+            print('Wrote all bonds in:')
+            print(twrite-tsubgraphs_w)  
             try:
                 os.mkdir('/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/'+system)
             except:
@@ -1039,6 +1195,16 @@ if __name__ == "__main__":
             path_name_data_out='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/bonds_datafile_out_OVITO/'+system+'/'+system+'_'
             datafile_for_header='TSBP_Fe_x48.data'
             tal.write_bonds_datafiles(dumps_filenames,path_name_data_out,datafile_for_header)
+
+            tovito=time.time()
+            print('Wrote ovito bond datafiles')
+            print(tovito-twrite) 
+
+            fout_PO_clusters='/home/carlos/WORK/Phosphates_ReaxFF/ReaxFF/Comp_shear/processed/'+system+'_PO_clusters'
+            tal.get_clusters_per_attribute(attribute='element',value='P',fout=fout_PO_clusters,max_length=48)
+            tclusters=time.time()
+            print('Wrote P clusters in')
+            print(tclusters-tovito)
     """
     #G0=tal.G0
     tinit=time.time()
